@@ -9,7 +9,7 @@ all: dev run
 
 dev: $(SRC)
 	@mkdir -p $(BIN_DIR)
-	$(CC) $(COMMON_FLAGS) -O0 $(SRC) -o $(TARGET)
+	$(CC) $(COMMON_FLAGS) -g -O0 $(SRC) -o $(TARGET)
 
 prod: $(SRC)
 	@mkdir -p $(BIN_DIR)

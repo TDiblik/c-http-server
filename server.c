@@ -7,7 +7,7 @@
 #include <arpa/inet.h>
 #include <stdbool.h>
 
-#define PORT 80
+#define PORT 8888
 #define LOG_IP true
 #define MAX_HEADERS_LEN 8192 // same as apache tomcat 6 (https://www.geekersdigest.com/max-http-request-header-size-server-comparison/)
 
@@ -18,11 +18,14 @@ typedef struct {
     char method[16];
     char path[256];
     char protocol[16];
-    char *body;
+    char* headers;
+    char* body;
 } HttpRequest;
 
 void handle_client(int client_soc);
 int read_protocol_info(int client_soc, HttpRequest* req);
+int read_headers(int client_soc, HttpRequest* req);
+int read_body(int client_soc, HttpRequest* req);
 
 int main(void) {
   int server_soc = socket(AF_INET, SOCK_STREAM, 0);
@@ -65,7 +68,7 @@ int main(void) {
     }
 
     if (LOG_IP) {
-      char ip_str[INET_ADDRSTRLEN];
+      char ip_str[INET_ADDRSTRLEN] = {0};
       if (inet_ntop(AF_INET, &client_adress.sin_addr, ip_str, INET_ADDRSTRLEN) != NULL) {
         printf("client_soc accepted connection from %s\n", ip_str);
       }
@@ -86,14 +89,18 @@ void handle_client(int client_soc) {
       perror("client didn't send protocol info bytes. closing.");
       return;
   };
+  switch (read_headers(client_soc, &req)) {
+    case -1:
+      perror("client didn't send headers bytes correctly. closing.");
+      return;
+  };
 
   printf("%s %s: %s\n", req.protocol, req.method, req.path);
 }
 
 int read_protocol_info(int client_soc, HttpRequest* req) {
-  size_t protocol_info_buf_len = sizeof(req->method) + sizeof(req->path) + sizeof(req->protocol);
-  char protocol_info_buf[protocol_info_buf_len];
-  ssize_t bytes_read = read(client_soc, &protocol_info_buf, protocol_info_buf_len-1);
+  char protocol_info_buf[512] = {0}; // use large enough array and zero it out (only 288 bytes should be used in reality)
+  ssize_t bytes_read = read(client_soc, &protocol_info_buf, sizeof(req->method) + sizeof(req->path) + sizeof(req->protocol) - 1);
   if (bytes_read < 0) {
     return -1;
   }
@@ -102,13 +109,20 @@ int read_protocol_info(int client_soc, HttpRequest* req) {
   return 0;
 }
 
-// void read_headers(int client_soc) {
-//   // int total_bytes = 0;
-//   // int n;
-//   // while (total_bytes < MAX_HEADERS_LEN) {
-//   //   n = read(client_soc, )
-//   // }
-//   // todo: implement
+int read_headers(int client_soc, HttpRequest* req) {
+  size_t total_bytes = 0;
+  char headers_buffer[MAX_HEADERS_LEN+1] = {0}; // keep space for \0
+  while (total_bytes < MAX_HEADERS_LEN) {
+    if (read(client_soc, headers_buffer + total_bytes, 1) <= 0) return -1;
+    total_bytes += 1;
+    headers_buffer[total_bytes] = '\0';
+    if (strstr(headers_buffer, "\r\n\r\n")) break;
+  }
+  strcpy(req->headers, headers_buffer);
+  return 0;
+}
+
+// int read_body(int client_soc, HttpRequest* req) {
 // }
 
 // void read_body() {
