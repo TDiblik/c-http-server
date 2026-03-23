@@ -1,0 +1,9 @@
+[
+  {
+    "label": "Build Dev Server",
+    "command": "make",
+    "args": [
+      "dev"
+    ]
+  }
+]
