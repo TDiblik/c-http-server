@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,13 +20,20 @@ typedef struct {
     char path[256];
     char protocol[16];
     char* headers;
+    size_t headers_len;
     char* body;
 } HttpRequest;
 
+
+// Error codes map for the following fuctions returning an int:
+// 0 -> ok
+// -1 -> allocation issue
+// -2 -> socket read issue
+// -3 -> malformed request line
+// -4 -> malformed http header(s)
 void handle_client(int client_soc);
-int read_protocol_info(int client_soc, HttpRequest* req);
-int read_headers(int client_soc, HttpRequest* req);
-int read_body(int client_soc, HttpRequest* req);
+int _read_into_req(int client_soc, HttpRequest* req);
+int get_header_value(HttpRequest* req, char* header_name, char** header_value, size_t* header_value_len);
 
 int main(void) {
   int server_soc = socket(AF_INET, SOCK_STREAM, 0);
@@ -84,47 +92,80 @@ int main(void) {
 
 void handle_client(int client_soc) {
   HttpRequest req = {0};
-  switch (read_protocol_info(client_soc, &req)) {
-    case -1:
-      perror("client didn't send protocol info bytes. closing.");
-      return;
-  };
-  switch (read_headers(client_soc, &req)) {
-    case -1:
-      perror("client didn't send headers bytes correctly. closing.");
-      return;
-  };
-
-  printf("%s %s: %s\n", req.protocol, req.method, req.path);
+  _read_into_req(client_soc, &req);
+  free(req.body);
+  free(req.headers);
 }
 
-int read_protocol_info(int client_soc, HttpRequest* req) {
-  char protocol_info_buf[512] = {0}; // use large enough array and zero it out (only 288 bytes should be used in reality)
-  ssize_t bytes_read = read(client_soc, &protocol_info_buf, sizeof(req->method) + sizeof(req->path) + sizeof(req->protocol) - 1);
-  if (bytes_read < 0) {
-    return -1;
+int _read_into_req(int client_soc, HttpRequest* req) {
+  // read request line
+  char req_line[512] = {0}; // use large enough array and zero it out (only 288 bytes should be used in reality)
+  size_t req_line_len = 0;
+  while (req_line_len < sizeof(req_line) - 1) {
+    if (read(client_soc, req_line + req_line_len, 1) <= 0) return -2;
+    req_line_len += 1;
+    if (req_line_len >= 2 && req_line[req_line_len - 2] == '\r' && req_line[req_line_len - 1] == '\n') {
+      req_line[req_line_len] = '\0';
+      break;
+    }
   }
-  protocol_info_buf[bytes_read] = '\0';
-  sscanf(protocol_info_buf, "%15s %255s %15s", req->method, req->path, req->protocol);
+  if (sscanf(req_line, "%15s %255s %15s", req->method, req->path, req->protocol) != 3) return -3;
+
+  // read headers
+  bool headers_ok = false;
+  req->headers_len = 0;
+  req->headers = malloc(MAX_HEADERS_LEN + 1);
+  if (req->headers == NULL) return -1;
+  while (req->headers_len < MAX_HEADERS_LEN) {
+    if (read(client_soc, req->headers + req->headers_len, 1) <= 0) return -2; // Connection closed or error
+    req->headers_len += 1;
+    if (req->headers_len >= 4 && req->headers[req->headers_len - 4] == '\r' && req->headers[req->headers_len - 3] == '\n' && req->headers[req->headers_len - 2] == '\r' && req->headers[req->headers_len - 1] == '\n') {
+      req->headers[req->headers_len] = '\0';
+      req->headers_len += 1;
+      char* resized = realloc(req->headers, req->headers_len);
+      if (resized != NULL) {
+        req->headers = resized;
+      }
+      headers_ok = true;
+      break;
+    }
+  }
+  if (!headers_ok) return -4;
+
+  // read body
+  char* content_len_raw = NULL;
+  size_t content_len_raw_len = 0;
+  int err_code = get_header_value(req, "Content-Length", &content_len_raw, &content_len_raw_len);
+  if (err_code < 0) { free(content_len_raw); return err_code; }
+
+  // todo: read body
+
+  free(content_len_raw);
   return 0;
 }
 
-int read_headers(int client_soc, HttpRequest* req) {
-  size_t total_bytes = 0;
-  char headers_buffer[MAX_HEADERS_LEN+1] = {0}; // keep space for \0
-  while (total_bytes < MAX_HEADERS_LEN) {
-    if (read(client_soc, headers_buffer + total_bytes, 1) <= 0) return -1;
-    total_bytes += 1;
-    headers_buffer[total_bytes] = '\0';
-    if (strstr(headers_buffer, "\r\n\r\n")) break;
-  }
-  strcpy(req->headers, headers_buffer);
+// Caller is reponsible for freeing the header_value after usage
+int get_header_value(HttpRequest* req, char* header_name, char** header_value, size_t* header_value_len) {
+  if (!req || !req->headers || !header_name || !header_value) return -1;
+
+  char *header_start = strstr(req->headers, header_name);
+  if (!header_start) return 0;
+
+  char *end_of_line = strstr(header_start, "\r\n");
+  if (!end_of_line) return -4;
+
+  char *colon = strchr(header_start, ':');
+  if (!colon || colon > end_of_line) return -4;
+
+  char *value_start = colon + 1;
+  while (*value_start == ' ' && value_start < end_of_line) value_start++;
+
+  *header_value_len = (size_t)(end_of_line - value_start);
+  *header_value = (char*)malloc(*header_value_len + 1);
+  if (!*header_value) return -1;
+
+  memcpy(*header_value, value_start, *header_value_len);
+  (*header_value)[*header_value_len] = '\0';
+
   return 0;
 }
-
-// int read_body(int client_soc, HttpRequest* req) {
-// }
-
-// void read_body() {
-//   // todo: implement
-// }
