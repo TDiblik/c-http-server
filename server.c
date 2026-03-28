@@ -10,7 +10,8 @@
 
 #define PORT 8888
 #define LOG_IP true
-#define MAX_HEADERS_LEN 8192 // same as apache tomcat 6 (https://www.geekersdigest.com/max-http-request-header-size-server-comparison/)
+#define MAX_HEADERS_LEN 8192 // 8KB; same as apache tomcat 6 (https://www.geekersdigest.com/max-http-request-header-size-server-comparison/)
+#define MAX_BODY_LEN 8388608 // 8MB
 
 // note on usage: we can safely convert sockaddr_in into sockaddr, since they are 1:1 aligned in memory
 typedef struct sockaddr sockaddr;
@@ -22,15 +23,18 @@ typedef struct {
     char* headers;
     size_t headers_len;
     char* body;
+    size_t body_len;
 } HttpRequest;
 
+#define SEND_RESPONSE(client_soc, response, req) do { \
+    send(client_soc, response, strlen(response), 0);  \
+    close(client_soc);                                \
+    free(req.headers);                                \
+    free(req.body);                                   \
+    (req.headers) = NULL;                             \
+    (req.body) = NULL;                                \
+} while (0)
 
-// Error codes map for the following fuctions returning an int:
-// 0 -> ok
-// -1 -> allocation issue
-// -2 -> socket read issue
-// -3 -> malformed request line
-// -4 -> malformed http header(s)
 void handle_client(int client_soc);
 int _read_into_req(int client_soc, HttpRequest* req);
 int get_header_value(HttpRequest* req, char* header_name, char** header_value, size_t* header_value_len);
@@ -92,23 +96,67 @@ int main(void) {
 
 void handle_client(int client_soc) {
   HttpRequest req = {0};
-  _read_into_req(client_soc, &req);
-  free(req.body);
-  free(req.headers);
+
+  char response[8192];
+  int parse_err_code = _read_into_req(client_soc, &req);
+
+  const char *http_err = NULL;
+  switch (parse_err_code) {
+    case 0:
+      break;
+    case -1:
+      perror("Server Error: Allocation issue occurred");
+      http_err = "500 Internal Server Error";
+      break;
+    case -2:
+      perror("Server Error: Socket read issue");
+      http_err = "500 Internal Server Error";
+      break;
+    case -3:
+      fprintf(stderr, "Client Error: Malformed request line\n");
+      http_err = "400 Bad Request";
+      break;
+    case -4:
+      fprintf(stderr, "Client Error: Malformed HTTP header(s)\n");
+      http_err = "400 Bad Request";
+      break;
+    case -5:
+      fprintf(stderr, "Client Error: Request body too large\n");
+      http_err = "413 Payload Too Large";
+      break;
+    case -6:
+      fprintf(stderr, "Client Error: Malformed request body\n");
+      http_err = "400 Bad Request";
+      break;
+    default:
+      fprintf(stderr, "Server Error: Unknown internal error code: %d\n", parse_err_code);
+      http_err = "500 Internal Server Error";
+      break;
+  }
+  if (http_err != NULL) {
+    sprintf(response, "HTTP/1.1 %s\r\nConnection: close\r\n\r\n", http_err);
+    SEND_RESPONSE(client_soc, response, req);
+    return;
+  }
+
+  SEND_RESPONSE(client_soc, "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n", req);
 }
 
 int _read_into_req(int client_soc, HttpRequest* req) {
   // read request line
-  char req_line[512] = {0}; // use large enough array and zero it out (only 288 bytes should be used in reality)
+  char req_line[512] = {0}; // only 288 bytes should be used in reality, but I want some room for error
   size_t req_line_len = 0;
+  bool req_line_ok = false;
   while (req_line_len < sizeof(req_line) - 1) {
     if (read(client_soc, req_line + req_line_len, 1) <= 0) return -2;
     req_line_len += 1;
     if (req_line_len >= 2 && req_line[req_line_len - 2] == '\r' && req_line[req_line_len - 1] == '\n') {
       req_line[req_line_len] = '\0';
+      req_line_ok = true;
       break;
     }
   }
+  if (!req_line_ok) return -3;
   if (sscanf(req_line, "%15s %255s %15s", req->method, req->path, req->protocol) != 3) return -3;
 
   // read headers
@@ -117,7 +165,7 @@ int _read_into_req(int client_soc, HttpRequest* req) {
   req->headers = malloc(MAX_HEADERS_LEN + 1);
   if (req->headers == NULL) return -1;
   while (req->headers_len < MAX_HEADERS_LEN) {
-    if (read(client_soc, req->headers + req->headers_len, 1) <= 0) return -2; // Connection closed or error
+    if (read(client_soc, req->headers + req->headers_len, 1) <= 0) return -2;
     req->headers_len += 1;
     if (req->headers_len >= 4 && req->headers[req->headers_len - 4] == '\r' && req->headers[req->headers_len - 3] == '\n' && req->headers[req->headers_len - 2] == '\r' && req->headers[req->headers_len - 1] == '\n') {
       req->headers[req->headers_len] = '\0';
@@ -137,10 +185,26 @@ int _read_into_req(int client_soc, HttpRequest* req) {
   size_t content_len_raw_len = 0;
   int err_code = get_header_value(req, "Content-Length", &content_len_raw, &content_len_raw_len);
   if (err_code < 0) { free(content_len_raw); return err_code; }
+  if (content_len_raw_len == 0) return 0;
 
-  // todo: read body
-
+  int parsed_len = atoi(content_len_raw);
   free(content_len_raw);
+
+  if (parsed_len < 0) return -4;
+  if (parsed_len == 0) return 0;
+  if (parsed_len > MAX_BODY_LEN) return -5;
+
+  size_t content_len = (size_t)parsed_len; // safe to do since int < long and we guard against negative numbers above
+  req->body = (char*)malloc(content_len+1);
+  size_t body_bytes_read = 0;
+  while (body_bytes_read < content_len) {
+      ssize_t bytes_read = read(client_soc, req->body + body_bytes_read, content_len - body_bytes_read);
+      if (bytes_read <= 0) return -6;
+      body_bytes_read += (size_t)bytes_read;
+  }
+  req->body[body_bytes_read] = '\0';
+  req->body_len = body_bytes_read;
+
   return 0;
 }
 
