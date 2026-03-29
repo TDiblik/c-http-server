@@ -16,14 +16,18 @@
 // note on usage: we can safely convert sockaddr_in into sockaddr, since they are 1:1 aligned in memory
 typedef struct sockaddr sockaddr;
 typedef struct sockaddr_in sockaddr_in;
+typedef enum { HTTP_GET, HTTP_POST, HTTP_PUT, HTTP_DELETE, HTTP_OPTIONS, HTTP_HEAD, HTTP_UNKNOWN } HttpMethod;
 typedef struct {
-    char method[16];
-    char path[256];
-    char protocol[16];
-    char* headers;
-    size_t headers_len;
-    char* body;
-    size_t body_len;
+  HttpMethod method;
+  char _method_raw[16];
+  char path[256];
+  char protocol[16];
+
+  char* headers;
+  size_t headers_len;
+
+  char* body;
+  size_t body_len;
 } HttpRequest;
 
 #define SEND_RESPONSE(client_soc, response, req) do { \
@@ -98,9 +102,8 @@ void handle_client(int client_soc) {
   HttpRequest req = {0};
 
   char response[8192];
+  char *http_err = NULL;
   int parse_err_code = _read_into_req(client_soc, &req);
-
-  const char *http_err = NULL;
   switch (parse_err_code) {
     case 0:
       break;
@@ -157,7 +160,15 @@ int _read_into_req(int client_soc, HttpRequest* req) {
     }
   }
   if (!req_line_ok) return -3;
-  if (sscanf(req_line, "%15s %255s %15s", req->method, req->path, req->protocol) != 3) return -3;
+  if (sscanf(req_line, "%15s %255s %15s", req->_method_raw, req->path, req->protocol) != 3) return -3;
+
+  req->method = HTTP_UNKNOWN;
+  if (strcmp(req->_method_raw, "GET") == 0) req->method = HTTP_GET;
+  else if (strcmp(req->_method_raw, "POST") == 0) req->method = HTTP_POST;
+  else if (strcmp(req->_method_raw, "PUT") == 0) req->method = HTTP_PUT;
+  else if (strcmp(req->_method_raw, "DELETE") == 0) req->method = HTTP_DELETE;
+  else if (strcmp(req->_method_raw, "OPTIONS") == 0) req->method = HTTP_OPTIONS;
+  else if (strcmp(req->_method_raw, "HEAD") == 0) req->method = HTTP_HEAD;
 
   // read headers
   bool headers_ok = false;
