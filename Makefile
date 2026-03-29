@@ -1,5 +1,5 @@
 CC = clang
-COMMON_FLAGS = -std=c99 -Wall -Wextra -Wshadow -Wpedantic -Wconversion -Wformat=2 -fstack-protector-strong -Werror
+COMMON_FLAGS = -std=c99 -Wall -Wextra -Wshadow -Wpedantic -Wconversion -Wformat=2 -fstack-protector-strong -Werror -lpthread
 
 SRC = server.c
 BIN_DIR = bin

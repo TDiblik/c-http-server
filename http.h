@@ -56,6 +56,7 @@ void http_respond(int client_soc, HttpRequest* req, const char* status, const ch
 #ifdef HTTP_IMPLEMENTATION
 #include <stdio.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
