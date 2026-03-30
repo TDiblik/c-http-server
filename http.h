@@ -6,11 +6,14 @@
 #ifndef HTTP_IMPLEMENTATION_LOG_IP
 #define HTTP_IMPLEMENTATION_LOG_IP false
 #endif
-#ifndef HTTP_IMPLEMENTATION_MAX_HEADERS_LEN
-#define HTTP_IMPLEMENTATION_MAX_HEADERS_LEN 8192 // 8KB; same as apache tomcat 6 (https://www.geekersdigest.com/max-http-request-header-size-server-comparison/)
+#ifndef HTTP_IMPLEMENTATION_MAX_REQ_HEADERS_LEN
+#define HTTP_IMPLEMENTATION_MAX_REQ_HEADERS_LEN 8192 // 8KB; same as apache tomcat 6 (https://www.geekersdigest.com/max-http-request-header-size-server-comparison/)
 #endif
-#ifndef HTTP_IMPLEMENTATION_MAX_BODY_LEN
-#define HTTP_IMPLEMENTATION_MAX_BODY_LEN 8388608 // 8MB
+#ifndef HTTP_IMPLEMENTATION_MAX_REQ_BODY_LEN
+#define HTTP_IMPLEMENTATION_MAX_REQ_BODY_LEN 8388608 // 8MB
+#endif
+#ifndef HTTP_IMPLEMENTATION_MAX_FILE_RESP_BODY_LEN
+#define HTTP_IMPLEMENTATION_MAX_FILE_RESP_BODY_LEN 1048576 // 1MB
 #endif
 
 // ============================================================================
@@ -37,6 +40,7 @@ typedef struct {
   char* body;
   size_t body_len;
 } HttpRequest;
+void http_request_free(HttpRequest* req);
 
 int http_parse_request(int client_soc, HttpRequest* req);
 int http_get_header_value(HttpRequest* req, char* header_name, char** header_value, size_t* header_value_len);
@@ -49,6 +53,9 @@ bool http_route_options(HttpRequest* req, const char* path);
 bool http_route_head(HttpRequest* req, const char* path);
 
 void http_respond(int client_soc, HttpRequest* req, const char* status, const char* content_type, const char* body);
+void http_respond_with_file(int client_soc, HttpRequest* req, char* file_path, char* file_type);
+#define http_respond_404(client_soc, req) http_respond(client_soc, req, "404 Not Found", "text/plain", "Route not found.");
+#define http_respond_500(client_soc, req) http_respond(client_soc, req, "500 Internal Server Error", "text/plain", "An internal server error occured.");
 
 // ============================================================================
 // IMPLEMENTATION SECTION
@@ -114,18 +121,22 @@ int http_client_accept(int server_soc) {
   struct sockaddr_in client_address = {0};
   socklen_t client_address_len = sizeof(client_address);
   int client_soc = accept(server_soc, (sockaddr*)&client_address, &client_address_len);
-  if (client_soc < 0) {
-    return -1;
-  }
+  if (client_soc < 0) return -1;
 
   if (HTTP_IMPLEMENTATION_LOG_IP) {
     char ip_str[INET_ADDRSTRLEN] = {0};
-    if (inet_ntop(AF_INET, &client_address.sin_addr, ip_str, INET_ADDRSTRLEN) != NULL) {
-      printf("client_soc accepted connection from %s\n", ip_str);
-    }
+    if (inet_ntop(AF_INET, &client_address.sin_addr, ip_str, INET_ADDRSTRLEN) != NULL) printf("client_soc accepted connection from %s\n", ip_str);
   }
 
   return client_soc;
+}
+
+void http_request_free(HttpRequest* req) {
+  if (!req) return;
+  free(req->headers);
+  free(req->body);
+  req->headers = NULL;
+  req->body = NULL;
 }
 
 int http_parse_request(int client_soc, HttpRequest* req) {
@@ -156,9 +167,9 @@ int http_parse_request(int client_soc, HttpRequest* req) {
   // read headers
   bool headers_ok = false;
   req->headers_len = 0;
-  req->headers = malloc(HTTP_IMPLEMENTATION_MAX_HEADERS_LEN + 1);
+  req->headers = malloc(HTTP_IMPLEMENTATION_MAX_REQ_HEADERS_LEN + 1);
   if (req->headers == NULL) return -1;
-  while (req->headers_len < HTTP_IMPLEMENTATION_MAX_HEADERS_LEN) {
+  while (req->headers_len < HTTP_IMPLEMENTATION_MAX_REQ_HEADERS_LEN) {
     if (read(client_soc, req->headers + req->headers_len, 1) <= 0) return -2;
     req->headers_len += 1;
     if (req->headers_len >= 4 && req->headers[req->headers_len - 4] == '\r' && req->headers[req->headers_len - 3] == '\n' && req->headers[req->headers_len - 2] == '\r' && req->headers[req->headers_len - 1] == '\n') {
@@ -186,7 +197,7 @@ int http_parse_request(int client_soc, HttpRequest* req) {
 
   if (parsed_len < 0) return -4;
   if (parsed_len == 0) return 0;
-  if (parsed_len > HTTP_IMPLEMENTATION_MAX_BODY_LEN) return -5;
+  if (parsed_len > HTTP_IMPLEMENTATION_MAX_REQ_BODY_LEN) return -5;
 
   size_t content_len = (size_t)parsed_len;
   req->body = (char*)malloc(content_len+1);
@@ -255,12 +266,30 @@ void http_respond(int client_soc, HttpRequest* req, const char* status, const ch
     http_soc_send(client_soc, body, body_len, 0);
   }
   http_soc_close(client_soc);
-
-  if (req) {
-    free(req->headers);
-    free(req->body);
-    req->headers = NULL;
-    req->body = NULL;
-  }
+  http_request_free(req);
 }
+
+void http_respond_with_file(int client_soc, HttpRequest* req, char* file_path, char* file_type) {
+  FILE *fptr = fopen(file_path, "r");
+  if (fptr == NULL) { http_respond_404(client_soc, req); return; }
+
+  char* file_contents = calloc(1, HTTP_IMPLEMENTATION_MAX_FILE_RESP_BODY_LEN);
+  if (file_contents == NULL) {
+    fclose(fptr);
+    http_respond_500(client_soc, req);
+    return;
+  }
+
+  size_t bytes_read = fread(file_contents, 1, HTTP_IMPLEMENTATION_MAX_FILE_RESP_BODY_LEN - 1, fptr);
+  fclose(fptr);
+
+  if (bytes_read == 0 && ferror(fptr)) {
+    free(file_contents);
+    http_respond_404(client_soc, req);
+    return;
+  }
+  http_respond(client_soc, req, "200 OK", file_type, file_contents);
+  free(file_contents);
+}
+
 #endif

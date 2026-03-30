@@ -3,16 +3,19 @@ COMMON_FLAGS = -std=c99 -Wall -Wextra -Wshadow -Wpedantic -Wconversion -Wformat=
 
 SRC = server.c
 BIN_DIR = bin
+PUBLIC_DIR = public
 TARGET = $(BIN_DIR)/server
 
 all: dev run
 
 dev: $(SRC)
 	@mkdir -p $(BIN_DIR)
+	@cp -R $(PUBLIC_DIR) $(BIN_DIR)
 	$(CC) $(COMMON_FLAGS) -g -O0 $(SRC) -o $(TARGET)
 
 prod: $(SRC)
 	@mkdir -p $(BIN_DIR)
+	@cp -R $(PUBLIC_DIR) $(BIN_DIR)
 	$(CC) $(COMMON_FLAGS) -O3 $(SRC) -o $(TARGET)
 
 run:
