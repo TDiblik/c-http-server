@@ -53,8 +53,9 @@ void* handle_client(void* args) {
     case -6: fprintf(stderr, "Client Error: Malformed request body\n");     http_err = "400 Bad Request";           break;
     default: fprintf(stderr, "Server Error: Unknown %d\n", parse_err_code); http_err = "500 Internal Server Error"; break;
   }
-  if (http_err != NULL) {
-    http_respond(client_soc, &req, http_err, "text/plain", "An error occurred while parsing the request.");
+  if (http_err) {
+    char* response = "An error occurred while parsing the request.";
+    http_respond(client_soc, &req, http_err, "text/plain", response, strlen(response));
     return NULL;
   }
 
@@ -64,17 +65,18 @@ void* handle_client(void* args) {
 
 void handle_routing(int client_soc, HttpRequest* req) {
   if (http_route_get(req, "/") || http_route_get(req, "/index") || http_route_get(req, "/index.html")) {
-    http_respond_with_file(client_soc, req, "./public/index.html", "text/html");
+    http_respond_with_text_file(client_soc, req, "./public/index.html", "text/html");
     return;
   }
 
   if (http_route_get(req, "/json")) {
-    http_respond(client_soc, req, "200 OK", "application/json", "{\"status\": \"success\"}");
+    char* response = "{\"status\": \"success\"}";
+    http_respond(client_soc, req, "200 OK", "application/json", response, strlen(response));
     return;
   }
 
   if (http_route_get(req, "/404") || http_route_get(req, "/404.html")) {
-    http_respond_with_file(client_soc, req, "./public/404.html", "text/html");
+    http_respond_with_text_file(client_soc, req, "./public/404.html", "text/html");
     return;
   }
 
