@@ -64,6 +64,11 @@ void* handle_client(void* args) {
 }
 
 void handle_routing(int client_soc, HttpRequest* req) {
+  if (http_route_get(req, "/favicon") || http_route_get(req, "/favicon.ico")) {
+    http_respond_with_file(client_soc, req, "./public/favicon.ico", "image/ico");
+    return;
+  }
+
   if (http_route_get(req, "/") || http_route_get(req, "/index") || http_route_get(req, "/index.html")) {
     http_respond_with_text_file(client_soc, req, "./public/index.html", "text/html");
     return;
