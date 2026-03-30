@@ -1,8 +1,8 @@
 #pragma once
 
-// ============================================================================
-// DEFAULTS
-// ============================================================================
+// ==========================
+// |        DEFAULTS        |
+// ==========================
 #ifndef HTTP_IMPLEMENTATION_LOG_IP
 #define HTTP_IMPLEMENTATION_LOG_IP false
 #endif
@@ -13,9 +13,9 @@
 #define HTTP_IMPLEMENTATION_MAX_REQ_BODY_LEN 8388608 // 8MB
 #endif
 
-// ============================================================================
-// DEFINITIONS SECTION
-// ============================================================================
+// ============================
+// |        DEFINITIONS       |
+// ============================
 #include <stddef.h>
 #include <stdbool.h>
 #include <sys/types.h>
@@ -55,9 +55,9 @@ void http_respond_with_text_file(int client_soc, HttpRequest* req, const char* f
 #define http_respond_404(client_soc, req) http_respond(client_soc, req, "404 Not Found", "text/plain", "Route not found.", 16)
 #define http_respond_500(client_soc, req) http_respond(client_soc, req, "500 Internal Server Error", "text/plain", "An internal server error occured.", 33)
 
-// ============================================================================
-// IMPLEMENTATION SECTION
-// ============================================================================
+// ================================
+// |        IMPLEMENTATION        |
+// ================================
 #ifdef HTTP_IMPLEMENTATION
 #include <stdio.h>
 #include <unistd.h>
