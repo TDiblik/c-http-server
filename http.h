@@ -52,8 +52,8 @@ bool http_route_head(HttpRequest* req, const char* path);
 void http_respond(int client_soc, HttpRequest* req, const char* status, const char* content_type, const char* body, size_t body_len);
 void http_respond_with_file(int client_soc, HttpRequest* req, const char* file_path, const char* content_type);
 void http_respond_with_text_file(int client_soc, HttpRequest* req, const char* file_path, const char* content_type);
-#define http_respond_404(client_soc, req) http_respond(client_soc, req, "404 Not Found", "text/plain", "Route not found.", 16)
-#define http_respond_500(client_soc, req) http_respond(client_soc, req, "500 Internal Server Error", "text/plain", "An internal server error occured.", 33)
+#define http_respond_404(client_soc, req) http_respond(client_soc, req, "404 Not Found", "text/plain", "Route not found.", strlen("Route not found."))
+#define http_respond_500(client_soc, req) http_respond(client_soc, req, "500 Internal Server Error", "text/plain", "An internal server error occured.", strlen("An internal server error occured."))
 
 // ================================
 // |        IMPLEMENTATION        |

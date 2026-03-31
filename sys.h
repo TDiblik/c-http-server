@@ -3,6 +3,9 @@
 // ============================
 // |        DEFINITIONS       |
 // ============================
+#include <stdint.h>
+#include <stdbool.h>
+
 int sys_get_cpu_stats(float* user_usage_percentage, float* system_usage_percentage, float* idle_usage_percentage, float* nice_usage_percentage, float* total_usage_percentage);
 int sys_get_mem_stats(uint64_t* total, uint64_t* used, uint64_t* app, uint64_t* wired, uint64_t* compressed, uint64_t* cached, uint64_t* swap_used);
 int sys_get_network_stats(double* rx_bps, double* tx_bps);
@@ -19,8 +22,6 @@ int sys_get_uptime(long* uptime);
 #include <sys/sysctl.h>
 #include <mach/vm_statistics.h>
 #include <mach/mach_types.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,16 +49,10 @@ int sys_get_cpu_stats(float* user_usage_percentage, float* system_usage_percenta
   mach_port_deallocate(mach_task_self(), host_port);
 
   if (kr != KERN_SUCCESS) return -1;
-
   if (!has_prev) {
     prev_load = cpu_load;
     has_prev = true;
-    *user_usage_percentage = 0.f;
-    *system_usage_percentage = 0.f;
-    *idle_usage_percentage = 0.f;
-    *nice_usage_percentage = 0.f;
-    *total_usage_percentage = 0.f;
-    return 0;
+    return sys_get_cpu_stats(user_usage_percentage, system_usage_percentage, idle_usage_percentage, nice_usage_percentage, total_usage_percentage);
   }
 
   natural_t user_diff = cpu_load.cpu_ticks[CPU_STATE_USER] - prev_load.cpu_ticks[CPU_STATE_USER];
@@ -73,7 +68,6 @@ int sys_get_cpu_stats(float* user_usage_percentage, float* system_usage_percenta
   *idle_usage_percentage = 0.f;
   *nice_usage_percentage = 0.f;
   *total_usage_percentage = 0.f;
-
   if (total_diff == 0) return 0;
 
   *user_usage_percentage = (float)user_diff / total_diff * 100.0f;
@@ -87,9 +81,7 @@ int sys_get_cpu_stats(float* user_usage_percentage, float* system_usage_percenta
 
 int sys_get_mem_stats(uint64_t* total, uint64_t* used, uint64_t* app, uint64_t* wired, uint64_t* compressed, uint64_t* cached, uint64_t* swap_used) {
   size_t sz = sizeof(*total);
-  if (sysctlbyname("hw.memsize", total, &sz, NULL, 0) < 0) {
-    return -1;
-  }
+  if (sysctlbyname("hw.memsize", total, &sz, NULL, 0) != 0) return -1;
 
   mach_port_t host_port = mach_host_self();
   vm_size_t pagesize;
@@ -100,9 +92,7 @@ int sys_get_mem_stats(uint64_t* total, uint64_t* used, uint64_t* app, uint64_t* 
   kern_return_t kr = host_statistics64(host_port, HOST_VM_INFO64, (host_info64_t)&vm_stats, &count);
   mach_port_deallocate(mach_task_self(), host_port);
 
-  if (kr != KERN_SUCCESS) {
-    return -1;
-  }
+  if (kr != KERN_SUCCESS) return -2;
 
   *app = (vm_stats.active_count) * pagesize;
   *wired = (vm_stats.wire_count) * pagesize;
@@ -128,10 +118,7 @@ int sys_get_network_stats(double* rx_bps, double* tx_bps) {
   struct ifaddrs *ifa_list = NULL, *ifa;
   uint64_t rx = 0, tx = 0;
 
-  if (getifaddrs(&ifa_list) < 0) {
-    return -1;
-  }
-
+  if (getifaddrs(&ifa_list) != 0) return -1;
   for (ifa = ifa_list; ifa; ifa = ifa->ifa_next) {
     if (!(ifa->ifa_flags & IFF_UP) || !ifa->ifa_data) continue;
     if (ifa->ifa_addr->sa_family != AF_LINK) continue;
@@ -144,7 +131,7 @@ int sys_get_network_stats(double* rx_bps, double* tx_bps) {
   freeifaddrs(ifa_list);
 
   struct timeval now;
-  gettimeofday(&now, NULL);
+  if (gettimeofday(&now, NULL) != 0) return -2;
 
   *rx_bps = 0;
   *tx_bps = 0;
@@ -167,9 +154,7 @@ int sys_get_network_stats(double* rx_bps, double* tx_bps) {
 // refer to `man statvfs`
 int sys_get_disk_stats(uint64_t* total_bytes, uint64_t* free_bytes, float* percentage_used) {
   struct statvfs stats;
-  if (statvfs("/", &stats) != 0) {
-    return -1;
-  }
+  if (statvfs("/", &stats) != 0) return -1;
 
   *total_bytes = (uint64_t)stats.f_blocks * stats.f_frsize;
   *free_bytes = (uint64_t)stats.f_bfree * stats.f_frsize;
@@ -180,20 +165,15 @@ int sys_get_disk_stats(uint64_t* total_bytes, uint64_t* free_bytes, float* perce
 // inspiration taken from: https://www.programmersought.com/article/5314588404/
 int sys_get_battery_stats(int* percent, bool* is_charging) {
   CFTypeRef blob = IOPSCopyPowerSourcesInfo();
+  if (!blob) return -1;
   CFArrayRef sources = IOPSCopyPowerSourcesList(blob);
-  #define free_resources do {if (sources) CFRelease(sources); if (blob) CFRelease(blob);} while (0);
+  #define free_resources do {if (sources) CFRelease(sources); if (blob) CFRelease(blob);} while (0)
 
-  if (!sources) return -1;
-  if (CFArrayGetCount(sources) < 0) {
-    free_resources;
-    return -1;
-  }
+  if (!sources) { free_resources; return -2; }
+  if (CFArrayGetCount(sources) <= 0) { free_resources; return -3; }
 
   CFDictionaryRef desc = IOPSGetPowerSourceDescription(blob, CFArrayGetValueAtIndex(sources, 0));
-  if (!desc) {
-    free_resources;
-    return -1;
-  }
+  if (!desc) { free_resources; return -4; }
 
   CFNumberRef cap = (CFNumberRef)CFDictionaryGetValue(desc, CFSTR(kIOPSCurrentCapacityKey));
   if (cap) CFNumberGetValue(cap, kCFNumberIntType, percent);
@@ -202,6 +182,8 @@ int sys_get_battery_stats(int* percent, bool* is_charging) {
   if (state) *is_charging = CFStringCompare(state, CFSTR(kIOPSACPowerValue), 0) == kCFCompareEqualTo;
 
   free_resources;
+  #undef free_resources
+
   return 0;
 }
 
@@ -210,25 +192,21 @@ int sys_get_uptime(long* uptime) {
   struct timeval boottime;
   size_t len = sizeof(boottime);
   int mib[2] = {CTL_KERN, KERN_BOOTTIME};
-  int err_code = sysctl(mib, 2, &boottime, &len, NULL, 0);
 
-  if (err_code < 0) return err_code;
-  if (boottime.tv_sec <= 0) return -1;
+  if (sysctl(mib, 2, &boottime, &len, NULL, 0) != 0) return -1;
+  if (boottime.tv_sec <= 0) return -2;
 
   struct timeval now;
-  err_code = gettimeofday(&now, NULL);
-  if (err_code < 0) return err_code;
+  if (gettimeofday(&now, NULL) != 0) return -3;
 
   *uptime = now.tv_sec - boottime.tv_sec;
-
   return 0;
 }
 
 // refer to `man getloadavg`
 int sys_get_load_avg(double* load_avg_1m, double* load_avg_5m, double* load_avg_15m) {
   double load[3];
-  int err_code = getloadavg(load, 3);
-  if (err_code < 0) return err_code;
+  if (getloadavg(load, 3) < 0) { return -1; }
 
   *load_avg_1m = load[0];
   *load_avg_5m = load[1];
