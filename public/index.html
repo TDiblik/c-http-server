@@ -96,11 +96,11 @@
       .polyline {
         fill: none;
         stroke-width: 1.5;
-        transition: all 0.3s ease;
+        transition: opacity 0.3s ease, points 0.3s ease;
       }
       .legend {
         display: flex;
-        gap: 10px;
+        gap: 8px;
         font-size: 0.7rem;
         margin-top: 8px;
         color: #888;
@@ -109,7 +109,24 @@
       .legend-item {
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 6px;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 4px;
+        transition: all 0.2s;
+        border: 1px solid transparent;
+        user-select: none;
+      }
+      .legend-item:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .legend-item.active {
+        background: color-mix(in srgb, var(--item-color), transparent 85%);
+        border-color: color-mix(in srgb, var(--item-color), transparent 50%);
+        color: #fff;
+      }
+      .legend-item.inactive {
+        opacity: 0.3;
       }
       .dot {
         width: 8px;
@@ -167,11 +184,21 @@
           </svg>
         </div>
         <div class="legend">
-          <div class="legend-item">
+          <div
+            class="legend-item active"
+            onclick="toggleGraph('cpuUser')"
+            data-key="cpuUser"
+            style="--item-color: var(--user-color)"
+          >
             <div class="dot" style="background: var(--user-color)"></div>
             User
           </div>
-          <div class="legend-item">
+          <div
+            class="legend-item active"
+            onclick="toggleGraph('cpuSys')"
+            data-key="cpuSys"
+            style="--item-color: var(--sys-color)"
+          >
             <div class="dot" style="background: var(--sys-color)"></div>
             System
           </div>
@@ -211,22 +238,48 @@
               stroke="var(--wired-color)"
               points=""
             ></polyline>
+            <polyline
+              id="mem-comp-line"
+              class="polyline"
+              stroke="var(--compressed-color)"
+              points=""
+            ></polyline>
           </svg>
         </div>
-        <div id="mem-breakdown" class="legend">
-          <div class="legend-item">
+        <div class="legend">
+          <div
+            class="legend-item active"
+            onclick="toggleGraph('memUsed')"
+            data-key="memUsed"
+            style="--item-color: var(--success-color)"
+          >
             <div class="dot" style="background: var(--success-color)"></div>
             Used
           </div>
-          <div class="legend-item">
+          <div
+            class="legend-item active"
+            onclick="toggleGraph('memApp')"
+            data-key="memApp"
+            style="--item-color: var(--app-color)"
+          >
             <div class="dot" style="background: var(--app-color)"></div>
             App
           </div>
-          <div class="legend-item">
+          <div
+            class="legend-item active"
+            onclick="toggleGraph('memWired')"
+            data-key="memWired"
+            style="--item-color: var(--wired-color)"
+          >
             <div class="dot" style="background: var(--wired-color)"></div>
             Wired
           </div>
-          <div class="legend-item">
+          <div
+            class="legend-item active"
+            onclick="toggleGraph('memComp')"
+            data-key="memComp"
+            style="--item-color: var(--compressed-color)"
+          >
             <div class="dot" style="background: var(--compressed-color)"></div>
             Compressed
           </div>
@@ -263,11 +316,21 @@
           </svg>
         </div>
         <div class="legend">
-          <div class="legend-item">
+          <div
+            class="legend-item active"
+            onclick="toggleGraph('netRx')"
+            data-key="netRx"
+            style="--item-color: var(--net-rx-color)"
+          >
             <div class="dot" style="background: var(--net-rx-color)"></div>
             Inbound (Rx)
           </div>
-          <div class="legend-item">
+          <div
+            class="legend-item active"
+            onclick="toggleGraph('netTx')"
+            data-key="netTx"
+            style="--item-color: var(--net-tx-color)"
+          >
             <div class="dot" style="background: var(--net-tx-color)"></div>
             Outbound (Tx)
           </div>
@@ -328,14 +391,65 @@
     <script>
       const historySize = 50;
       const graphs = {
-        cpuUser: { line: document.getElementById("cpu-user-line"), data: [] },
-        cpuSys: { line: document.getElementById("cpu-sys-line"), data: [] },
-        memUsed: { line: document.getElementById("mem-used-line"), data: [] },
-        memApp: { line: document.getElementById("mem-app-line"), data: [] },
-        memWired: { line: document.getElementById("mem-wired-line"), data: [] },
-        netRx: { line: document.getElementById("net-rx-line"), data: [] },
-        netTx: { line: document.getElementById("net-tx-line"), data: [] },
+        cpuUser: {
+          line: document.getElementById("cpu-user-line"),
+          data: [],
+          visible: true,
+        },
+        cpuSys: {
+          line: document.getElementById("cpu-sys-line"),
+          data: [],
+          visible: true,
+        },
+        memUsed: {
+          line: document.getElementById("mem-used-line"),
+          data: [],
+          visible: true,
+        },
+        memApp: {
+          line: document.getElementById("mem-app-line"),
+          data: [],
+          visible: true,
+        },
+        memWired: {
+          line: document.getElementById("mem-wired-line"),
+          data: [],
+          visible: true,
+        },
+        memComp: {
+          line: document.getElementById("mem-comp-line"),
+          data: [],
+          visible: true,
+        },
+        netRx: {
+          line: document.getElementById("net-rx-line"),
+          data: [],
+          visible: true,
+        },
+        netTx: {
+          line: document.getElementById("net-tx-line"),
+          data: [],
+          visible: true,
+        },
       };
+
+      function toggleGraph(key) {
+        const g = graphs[key];
+        if (!g) return;
+        g.visible = !g.visible;
+
+        const line = g.line;
+        line.style.opacity = g.visible ? "1" : "0";
+
+        const legendItem = document.querySelector(`[data-key="${key}"]`);
+        if (g.visible) {
+          legendItem.classList.add("active");
+          legendItem.classList.remove("inactive");
+        } else {
+          legendItem.classList.remove("active");
+          legendItem.classList.add("inactive");
+        }
+      }
 
       function updateGraph(graphKey, value, max = 100) {
         const g = graphs[graphKey];
@@ -343,6 +457,7 @@
         g.data.push(value);
         if (g.data.length > historySize) g.data.shift();
 
+        // Always update the points data even if hidden, so it's ready when shown
         const points = g.data
           .map((v, i) => {
             const x = (i / (historySize - 1)) * 200;
@@ -366,7 +481,7 @@
         const h = Math.floor((seconds % 86400) / 3600);
         const m = Math.floor((seconds % 3600) / 60);
         const s = seconds % 60;
-        
+
         let res = [];
         if (d > 0) res.push(`${d}d`);
         if (h > 0 || d > 0) res.push(`${h}h`);
@@ -398,15 +513,17 @@
           const memUsedPct = (mem.used / mem.total) * 100;
           const memAppPct = (mem.app / mem.total) * 100;
           const memWiredPct = (mem.wired / mem.total) * 100;
+          const memCompPct = (mem.compressed / mem.total) * 100;
 
           document.getElementById("mem-pct").innerText =
             memUsedPct.toFixed(1) + "%";
           document.getElementById("mem-details").innerHTML =
             `Used: ${formatBytes(mem.used)}<br>Cached: ${formatBytes(mem.cached)}<br>Swap: ${formatBytes(mem.swap_used)}`;
-          
+
           updateGraph("memUsed", memUsedPct);
           updateGraph("memApp", memAppPct);
           updateGraph("memWired", memWiredPct);
+          updateGraph("memComp", memCompPct);
 
           // Network Update
           const netTotal = net.rx_bps + net.tx_bps;
@@ -446,7 +563,9 @@
           }
 
           // Uptime Update
-          document.getElementById("uptime").innerText = formatUptime(sys.uptime_sec);
+          document.getElementById("uptime").innerText = formatUptime(
+            sys.uptime_sec,
+          );
         } catch (e) {
           console.error(e);
         }
