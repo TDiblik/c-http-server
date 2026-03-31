@@ -113,7 +113,6 @@ int sys_get_mem_stats(uint64_t* total, uint64_t* used, uint64_t* app, uint64_t* 
 }
 
 int sys_get_network_stats(double* rx_bps, double* tx_bps) {
-  // todo: add mutex
   static uint64_t prev_rx = 0, prev_tx = 0;
   static struct timeval prev_time = {0};
   static pthread_mutex_t network_mutex = PTHREAD_MUTEX_INITIALIZER;

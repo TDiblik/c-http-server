@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 #define HTTP_IMPLEMENTATION
-#define HTTP_IMPLEMENTATION_LOG_IP true
+#define HTTP_IMPLEMENTATION_LOG_IP false
 #include "http.h"
 
 #define SYS_IMPLEMENTATION
