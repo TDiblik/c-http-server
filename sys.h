@@ -11,7 +11,6 @@ int sys_get_mem_stats(uint64_t* total, uint64_t* used, uint64_t* app, uint64_t* 
 int sys_get_network_stats(double* rx_bps, double* tx_bps);
 int sys_get_disk_stats(uint64_t* total_bytes, uint64_t* free_bytes, float* percentage_used);
 int sys_get_battery_stats(int* percent, bool* is_charging);
-int sys_get_load_avg(double* load_avg_1m, double* load_avg_5m, double* load_avg_15m);
 int sys_get_uptime(long* uptime);
 
 // ================================
@@ -205,17 +204,6 @@ int sys_get_uptime(long* uptime) {
   if (gettimeofday(&now, NULL) != 0) return -3;
 
   *uptime = now.tv_sec - boottime.tv_sec;
-  return 0;
-}
-
-// refer to `man getloadavg`
-int sys_get_load_avg(double* load_avg_1m, double* load_avg_5m, double* load_avg_15m) {
-  double load[3];
-  if (getloadavg(load, 3) < 0) { return -1; }
-
-  *load_avg_1m = load[0];
-  *load_avg_5m = load[1];
-  *load_avg_15m = load[2];
   return 0;
 }
 #endif

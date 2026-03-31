@@ -266,7 +266,6 @@
           <div id="uptime" class="stat-main" style="font-size: 1.2rem">
             0d 0h 0m
           </div>
-          <div id="load-avg" class="stat-details">Load: 0.0, 0.0, 0.0</div>
         </div>
       </div>
     </div>
@@ -364,8 +363,6 @@
           const h = Math.floor((uptime % 86400) / 3600);
           const m = Math.floor((uptime % 3600) / 60);
           document.getElementById("uptime").innerText = `${d}d ${h}h ${m}m`;
-          document.getElementById("load-avg").innerText =
-            `Load: ${sys.load.join(", ")}`;
         } catch (e) {
           console.error(e);
         }

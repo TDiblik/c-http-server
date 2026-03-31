@@ -127,7 +127,7 @@ void get_api_memory(int client_soc, HttpRequest* req) {
     return;
   }
 
-  char response[512];
+  char response[256];
   snprintf(response, sizeof(response),
       "{\"total\": %" PRIu64 ", \"used\": %" PRIu64 ", \"app\": %" PRIu64 ", \"wired\": %" PRIu64 ", \"compressed\": %" PRIu64 ", \"cached\": %" PRIu64 ", \"swap_used\": %" PRIu64 "}",
       total_mem, used_mem, app_mem, wired_mem, compressed_mem, cached_files, swap_used);
@@ -183,14 +183,7 @@ void get_api_uptime(int client_soc, HttpRequest* req) {
     return;
   }
 
-  double load_avg_1m, load_avg_5m, load_avg_15m;
-  err_code = sys_get_load_avg(&load_avg_1m, &load_avg_5m, &load_avg_15m);
-  if (err_code < 0) {
-    get_respond_with_mach_error(client_soc, req, "/api/uptime", "sys_get_load_avg", err_code);
-    return;
-  }
-
   char response[256];
-  snprintf(response, sizeof(response), "{\"uptime_sec\": %ld, \"load\": [%.2f, %.2f, %.2f]}", uptime, load_avg_1m, load_avg_5m, load_avg_15m);
+  snprintf(response, sizeof(response), "{\"uptime_sec\": %ld}", uptime);
   http_respond(client_soc, req, "200 OK", "application/json", response, strlen(response));
 }
