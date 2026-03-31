@@ -18,6 +18,7 @@ int sys_get_uptime(long* uptime);
 // |        IMPLEMENTATION        |
 // ================================
 #ifdef SYS_IMPLEMENTATION
+#include <pthread.h>
 #include <mach/mach.h>
 #include <sys/sysctl.h>
 #include <mach/vm_statistics.h>
@@ -37,9 +38,9 @@ int sys_get_uptime(long* uptime);
 
 // inspiration taken from: https://www.green-coding.io/blog/cpu-utilization-mac/
 int sys_get_cpu_stats(float* user_usage_percentage, float* system_usage_percentage, float* idle_usage_percentage, float* nice_usage_percentage, float* total_usage_percentage) {
-  // todo: add mutex
   static host_cpu_load_info_data_t prev_load = {0};
   static bool has_prev = false;
+  static pthread_mutex_t cpu_mutex = PTHREAD_MUTEX_INITIALIZER;
 
   host_cpu_load_info_data_t cpu_load;
   mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
@@ -49,17 +50,19 @@ int sys_get_cpu_stats(float* user_usage_percentage, float* system_usage_percenta
   mach_port_deallocate(mach_task_self(), host_port);
 
   if (kr != KERN_SUCCESS) return -1;
+  pthread_mutex_lock(&cpu_mutex);
   if (!has_prev) {
     prev_load = cpu_load;
     has_prev = true;
+    pthread_mutex_unlock(&cpu_mutex);
     return sys_get_cpu_stats(user_usage_percentage, system_usage_percentage, idle_usage_percentage, nice_usage_percentage, total_usage_percentage);
   }
-
   natural_t user_diff = cpu_load.cpu_ticks[CPU_STATE_USER] - prev_load.cpu_ticks[CPU_STATE_USER];
   natural_t sys_diff  = cpu_load.cpu_ticks[CPU_STATE_SYSTEM] - prev_load.cpu_ticks[CPU_STATE_SYSTEM];
   natural_t idle_diff = cpu_load.cpu_ticks[CPU_STATE_IDLE] - prev_load.cpu_ticks[CPU_STATE_IDLE];
   natural_t nice_diff = cpu_load.cpu_ticks[CPU_STATE_NICE] - prev_load.cpu_ticks[CPU_STATE_NICE];
   prev_load = cpu_load;
+  pthread_mutex_unlock(&cpu_mutex);
 
   float total_diff = user_diff + sys_diff + idle_diff + nice_diff;
 
@@ -114,6 +117,7 @@ int sys_get_network_stats(double* rx_bps, double* tx_bps) {
   // todo: add mutex
   static uint64_t prev_rx = 0, prev_tx = 0;
   static struct timeval prev_time = {0};
+  static pthread_mutex_t network_mutex = PTHREAD_MUTEX_INITIALIZER;
 
   struct ifaddrs *ifa_list = NULL, *ifa;
   uint64_t rx = 0, tx = 0;
@@ -136,6 +140,7 @@ int sys_get_network_stats(double* rx_bps, double* tx_bps) {
   *rx_bps = 0;
   *tx_bps = 0;
 
+  pthread_mutex_lock(&network_mutex);
   if (prev_time.tv_sec != 0) {
     double diff_time = (double)(now.tv_sec - prev_time.tv_sec) + (double)(now.tv_usec - prev_time.tv_usec) / 1000000.0;
     if (diff_time > 0) {
@@ -143,10 +148,10 @@ int sys_get_network_stats(double* rx_bps, double* tx_bps) {
       *tx_bps = (double)(tx - prev_tx) / diff_time;
     }
   }
-
   prev_rx = rx;
   prev_tx = tx;
   prev_time = now;
+  pthread_mutex_unlock(&network_mutex);
 
   return 0;
 }

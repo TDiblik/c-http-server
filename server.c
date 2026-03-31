@@ -18,7 +18,7 @@ void handle_routing(int client_soc, HttpRequest* req);
 
 #define get_respond_with_mach_error(client_soc, req, path, function, err_code) do {                                                                     \
   fprintf(stderr, "%s errored with %i inside %s. Returning an error.\n", path, err_code, function);                                                     \
-  http_respond(client_soc, req, "500 Internal Server Error", "application/json", "{\"error\": \"mach error\"}", strlen("{\"error\": \"mach error\"}")); \
+  http_respond(client_soc, req, "500 Internal Server Error", "application/json", "{\"error\": \"sys error\"}", strlen("{\"error\": \"sys error\"}")); \
 } while(0);
 
 void get_api_cpu(int client_soc, HttpRequest* req);
