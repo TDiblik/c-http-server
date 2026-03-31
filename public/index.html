@@ -55,6 +55,7 @@
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
         display: flex;
         flex-direction: column;
+        position: relative;
       }
       .card h2 {
         margin: 0 0 10px 0;
@@ -88,6 +89,7 @@
         background: #222;
         border-radius: 4px;
         overflow: hidden;
+        position: relative;
       }
       .graph-svg {
         width: 100%;
@@ -96,7 +98,15 @@
       .polyline {
         fill: none;
         stroke-width: 1.5;
-        transition: opacity 0.3s ease, points 0.3s ease;
+        transition: opacity 0.3s ease, points 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .graph-label {
+        position: absolute;
+        top: 2px;
+        right: 4px;
+        font-size: 0.6rem;
+        color: #555;
+        pointer-events: none;
       }
       .legend {
         display: flex;
@@ -163,6 +173,7 @@
           </div>
         </div>
         <div class="graph-container">
+          <div id="cpu-max-label" class="graph-label">Max: 100%</div>
           <svg
             id="cpu-graph"
             class="graph-svg"
@@ -214,6 +225,7 @@
           </div>
         </div>
         <div class="graph-container">
+          <div id="mem-max-label" class="graph-label">Max: 100%</div>
           <svg
             id="mem-graph"
             class="graph-svg"
@@ -295,6 +307,7 @@
           </div>
         </div>
         <div class="graph-container">
+          <div id="net-max-label" class="graph-label">Max: 10 KB/s</div>
           <svg
             id="net-graph"
             class="graph-svg"
@@ -449,23 +462,47 @@
           legendItem.classList.remove("active");
           legendItem.classList.add("inactive");
         }
+        // Force a re-render of the group to potentially update scale
+        renderAll();
       }
 
-      function updateGraph(graphKey, value, max = 100) {
-        const g = graphs[graphKey];
+      function pushData(key, value) {
+        const g = graphs[key];
         if (!g) return;
         g.data.push(value);
         if (g.data.length > historySize) g.data.shift();
+      }
 
-        // Always update the points data even if hidden, so it's ready when shown
-        const points = g.data
-          .map((v, i) => {
-            const x = (i / (historySize - 1)) * 200;
-            const y = 60 - (v / max) * 60;
-            return `${x},${y}`;
-          })
-          .join(" ");
-        g.line.setAttribute("points", points);
+      function renderGroup(keys, labelId, formatFn, minMax = 1) {
+        let max = minMax;
+        keys.forEach((k) => {
+          const g = graphs[k];
+          // We only consider visible lines for auto-scaling
+          if (g.visible && g.data.length > 0) {
+            const peak = Math.max(...g.data);
+            if (peak > max) max = peak;
+          }
+        });
+
+        // Add 10% headroom
+        const scaleMax = max * 1.1;
+
+        keys.forEach((k) => {
+          const g = graphs[k];
+          const points = g.data
+            .map((v, i) => {
+              const x = (i / (historySize - 1)) * 200;
+              const y = 60 - (v / scaleMax) * 60;
+              return `${x},${y}`;
+            })
+            .join(" ");
+          g.line.setAttribute("points", points);
+        });
+
+        const label = document.getElementById(labelId);
+        if (label) {
+          label.innerText = "Scale: " + formatFn(scaleMax);
+        }
       }
 
       function formatBytes(bytes) {
@@ -474,6 +511,14 @@
         const sizes = ["B", "KB", "MB", "GB", "TB"];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+      }
+
+      function formatPercent(v) {
+        return v.toFixed(1) + "%";
+      }
+
+      function formatNet(v) {
+        return formatBytes(v) + "/s";
       }
 
       function formatUptime(seconds) {
@@ -490,6 +535,37 @@
         return res.join(" ");
       }
 
+      let lastData = null;
+
+      function renderAll() {
+        if (!lastData) return;
+        const { cpu, mem, net, disk, bat, sys } = lastData;
+
+        // CPU
+        renderGroup(
+          ["cpuUser", "cpuSys"],
+          "cpu-max-label",
+          formatPercent,
+          5, // min 5% scale
+        );
+
+        // Memory
+        renderGroup(
+          ["memUsed", "memApp", "memWired", "memComp"],
+          "mem-max-label",
+          (v) => formatPercent(v),
+          10, // min 10% scale
+        );
+
+        // Network
+        renderGroup(
+          ["netRx", "netTx"],
+          "net-max-label",
+          formatNet,
+          1024 * 10, // min 10KB/s scale
+        );
+      }
+
       async function tick() {
         try {
           const [cpu, mem, net, disk, bat, sys] = await Promise.all([
@@ -501,47 +577,46 @@
             fetch("/api/uptime").then((r) => r.json()),
           ]);
 
-          // CPU Update
+          lastData = { cpu, mem, net, disk, bat, sys };
+
+          // CPU Stats Update
           document.getElementById("cpu-total").innerText =
             cpu.total.toFixed(1) + "%";
           document.getElementById("cpu-details").innerHTML =
             `User: ${cpu.user.toFixed(1)}%<br>System: ${cpu.system.toFixed(1)}%<br>Idle: ${cpu.idle.toFixed(1)}%`;
-          updateGraph("cpuUser", cpu.user);
-          updateGraph("cpuSys", cpu.system);
+          pushData("cpuUser", cpu.user);
+          pushData("cpuSys", cpu.system);
 
-          // Memory Update
-          const memUsedPct = (mem.used / mem.total) * 100;
-          const memAppPct = (mem.app / mem.total) * 100;
-          const memWiredPct = (mem.wired / mem.total) * 100;
-          const memCompPct = (mem.compressed / mem.total) * 100;
+          // Memory Stats Update
+          const total = mem.total;
+          const memUsedPct = (mem.used / total) * 100;
+          const memAppPct = (mem.app / total) * 100;
+          const memWiredPct = (mem.wired / total) * 100;
+          const memCompPct = (mem.compressed / total) * 100;
 
           document.getElementById("mem-pct").innerText =
             memUsedPct.toFixed(1) + "%";
           document.getElementById("mem-details").innerHTML =
             `Used: ${formatBytes(mem.used)}<br>Cached: ${formatBytes(mem.cached)}<br>Swap: ${formatBytes(mem.swap_used)}`;
 
-          updateGraph("memUsed", memUsedPct);
-          updateGraph("memApp", memAppPct);
-          updateGraph("memWired", memWiredPct);
-          updateGraph("memComp", memCompPct);
+          pushData("memUsed", memUsedPct);
+          pushData("memApp", memAppPct);
+          pushData("memWired", memWiredPct);
+          pushData("memComp", memCompPct);
 
-          // Network Update
+          // Network Stats Update
           const netTotal = net.rx_bps + net.tx_bps;
           document.getElementById("net-total").innerText =
             formatBytes(netTotal) + "/s";
           document.getElementById("net-details").innerHTML =
             `In: ${formatBytes(net.rx_bps)}/s<br>Out: ${formatBytes(net.tx_bps)}/s`;
-          const netMax = Math.max(
-            ...graphs.netRx.data,
-            ...graphs.netTx.data,
-            net.rx_bps,
-            net.tx_bps,
-            1024 * 10, // Min 10 KB/s scale
-          );
-          updateGraph("netRx", net.rx_bps, netMax);
-          updateGraph("netTx", net.tx_bps, netMax);
+          pushData("netRx", net.rx_bps);
+          pushData("netTx", net.tx_bps);
 
-          // Disk Update
+          // Render everything
+          renderAll();
+
+          // Disk (Linear bars don't need history-based scaling)
           document.getElementById("disk-pct").innerText =
             disk.percentage_used.toFixed(1) + "%";
           document.getElementById("disk-details").innerHTML =
@@ -549,7 +624,7 @@
           document.getElementById("disk-bar").style.width =
             disk.percentage_used + "%";
 
-          // Battery Update
+          // Battery
           if (bat.percent !== -1) {
             document.getElementById("bat-pct").innerText = bat.percent + "%";
             document.getElementById("bat-details").innerText = bat.is_charging
@@ -562,7 +637,7 @@
             document.getElementById("bat-bar").style.width = "100%";
           }
 
-          // Uptime Update
+          // Uptime
           document.getElementById("uptime").innerText = formatUptime(
             sys.uptime_sec,
           );
