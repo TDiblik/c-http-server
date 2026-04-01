@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SYS_H_
+#define SYS_H_
 
 // ============================
 // |        DEFINITIONS       |
@@ -205,4 +206,5 @@ int sys_get_uptime(long* uptime) {
   *uptime = now.tv_sec - boottime.tv_sec;
   return 0;
 }
-#endif
+#endif // SYS_IMPLEMENTATION
+#endif // SYS_H_

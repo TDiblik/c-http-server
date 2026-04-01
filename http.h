@@ -1,4 +1,5 @@
-#pragma once
+#ifndef HTTP_H_
+#define HTTP_H_
 
 // ==========================
 // |        DEFAULTS        |
@@ -309,4 +310,5 @@ void http_respond_with_file(int client_soc, HttpRequest* req, const char* file_p
 void http_respond_with_text_file(int client_soc, HttpRequest* req, const char* file_path, const char* content_type) {
   http_respond_with_file(client_soc, req, file_path, content_type);
 }
-#endif
+#endif // HTTP_IMPLEMENTATION
+#endif // HTTP_H_
