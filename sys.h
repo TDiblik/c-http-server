@@ -64,7 +64,7 @@ int sys_get_cpu_stats(float* user_usage_percentage, float* system_usage_percenta
   prev_load = cpu_load;
   pthread_mutex_unlock(&cpu_mutex);
 
-  float total_diff = user_diff + sys_diff + idle_diff + nice_diff;
+  float total_diff = (float)(user_diff + sys_diff + idle_diff + nice_diff);
 
   *user_usage_percentage = 0.f;
   *system_usage_percentage = 0.f;
