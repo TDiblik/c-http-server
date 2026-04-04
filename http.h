@@ -119,9 +119,7 @@ ssize_t http_soc_send(int socket, const char* message, size_t message_len, int f
   return (ssize_t)total_sent;
 }
 
-int http_soc_close(int server_soc) {
-  return close(server_soc);
-}
+int http_soc_close(int server_soc) { return close(server_soc); }
 
 int http_client_accept(int server_soc) {
   struct sockaddr_in client_address = {0};

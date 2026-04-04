@@ -82,6 +82,7 @@ int sys_get_cpu_stats(float* user_usage_percentage, float* system_usage_percenta
   return 0;
 }
 
+// inspiration taken from: https://github.com/exelban/stats
 int sys_get_mem_stats(uint64_t* total, uint64_t* used, uint64_t* app, uint64_t* wired, uint64_t* compressed, uint64_t* cached, uint64_t* swap_used) {
   size_t sz = sizeof(*total);
   if (sysctlbyname("hw.memsize", total, &sz, NULL, 0) != 0) return -1;
@@ -106,13 +107,12 @@ int sys_get_mem_stats(uint64_t* total, uint64_t* used, uint64_t* app, uint64_t* 
   struct xsw_usage vmusage;
   size_t vmusage_size = sizeof(vmusage);
   *swap_used = 0;
-  if (sysctlbyname("vm.swapusage", &vmusage, &vmusage_size, NULL, 0) == 0) {
-    *swap_used = vmusage.xsu_used;
-  }
+  if (sysctlbyname("vm.swapusage", &vmusage, &vmusage_size, NULL, 0) == 0) *swap_used = vmusage.xsu_used;
 
   return 0;
 }
 
+// inspiration taken from: https://github.com/exelban/stats
 int sys_get_network_stats(double* rx_bps, double* tx_bps) {
   static uint64_t prev_rx = 0, prev_tx = 0;
   static struct timeval prev_time = {0};
